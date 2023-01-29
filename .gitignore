@@ -1,0 +1,7 @@
+# Python, IDE Configs
+venv
+.mypy_cache
+.vscode
+
+# Secrets
+token.config

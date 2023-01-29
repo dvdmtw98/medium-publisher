@@ -1,0 +1,22 @@
+{
+	"name": "Medium (Python)",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"streetsidesoftware.code-spell-checker",
+				"mhutchie.git-graph",
+				"eamodio.gitlens",
+				"kisstkondoros.vscode-gutter-preview",
+				"yzhang.markdown-all-in-one",
+				"christian-kohler.path-intellisense",
+				"ms-azuretools.vscode-docker",
+				"ms-python.python"
+			]
+		}
+	},
+	"shutdownAction": "stopContainer",
+	"postStartCommand": "pip install -r requirements.txt"
+}
