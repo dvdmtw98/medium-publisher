@@ -263,7 +263,7 @@ def main() -> None:
     else:
         with open(user_arguments.list, encoding='utf-8') as list_file:
             for filepath in list_file:
-                upload_to_medium(filepath, user_arguments.status, user_arguments.author)
+                upload_to_medium(filepath.rstrip('\n'), user_arguments.status, user_arguments.author)
 
 
 if __name__ == "__main__":
