@@ -1,14 +1,14 @@
-'''
+"""
 Script to upload Markdown files along with Images to Medium
 
 References:
 https://betterprogramming.pub/programmatically-publish-a-markdown-file-as-a-medium-story-with-python-b2b072a5f968
 https://medium.com/@davide.gazze/publish-a-medium-post-using-python-fccbe61c04e
-'''
+"""
 
 from __future__ import annotations
 from typing import Mapping, Optional, TypedDict
-import os
+from os import path, environ
 import argparse
 
 from colorama import Fore, Style
@@ -20,10 +20,10 @@ import frontmatter  # type: ignore
 
 
 class MediumPost(TypedDict, total=False):
-    '''
+    """
     Type Annotation for Dictionary with Medium Post Content
     Tags is optional field
-    '''
+    """
 
     title: str
     tags: list[str]
@@ -35,17 +35,13 @@ class MediumPost(TypedDict, total=False):
 def print_colored(
     print_content: Optional[str], foreground_color: str = Fore.LIGHTYELLOW_EX
 ) -> None:
-    '''
-    Function to create colored Output
-    '''
+    """Function to create colored Output"""
 
     print(f"{foreground_color}{print_content}{Style.RESET_ALL}")
 
 
 def get_headers(token: str) -> Mapping[str, str]:
-    '''
-    Generates header to be send with each request to Medium
-    '''
+    """Generates header to be send with each request to Medium"""
 
     headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -62,9 +58,7 @@ def get_headers(token: str) -> Mapping[str, str]:
 
 
 def read_markdown_file(filepath: str) -> frontmatter.Post:
-    '''
-    Reads the content of markdown file
-    '''
+    """Reads the content of markdown file"""
 
     with open(filepath, 'r', encoding='utf-8') as markdown_file:
         markdown_file_content = frontmatter.load(markdown_file)
@@ -73,32 +67,15 @@ def read_markdown_file(filepath: str) -> frontmatter.Post:
     return markdown_file_content
 
 
-def read_socials_details() -> str:
-    '''
-    Read Author Social Links from File
-    '''
-
-    with open('config/socials.md', 'r', encoding='utf-8') as socials:
-        file_content = socials.read()
-    print_colored("Reading Author Social Details...")
-
-    return file_content
-
-
-def prepare_payload(filepath: str, status: str, author_details: bool) -> MediumPost:
-    '''
-    Generate Payload with required fields to Publish Post
-    '''
-
-    payload: MediumPost = {"contentFormat": "markdown"}
-
-    markdown_file_content = read_markdown_file(filepath)
-    post_frontmatter = markdown_file_content.metadata
+def process_markdown_metadata(
+    post_frontmatter: dict[str, any], payload: MediumPost, filepath: str, status: str
+) -> tuple[str, str, str]:
+    """Returns processed Metadata from Markdown file"""
 
     if post_frontmatter.get('title'):
         payload['title'] = post_frontmatter['title']
     else:
-        payload['title'] = str(os.path.basename(filepath))
+        payload['title'] = str(path.basename(filepath))
 
     if post_frontmatter.get('tags'):
         payload['tags'] = [
@@ -109,10 +86,36 @@ def prepare_payload(filepath: str, status: str, author_details: bool) -> MediumP
     payload['publishStatus'] = status
 
     post_title = f"# {payload['title']}\n\n"
-    post_description = f"{post_frontmatter['description']}\n\n" if post_frontmatter.get('description') else ''
-    socials_details = read_socials_details() if author_details else ''
 
-    post_content = post_title + post_description + markdown_file_content.content + socials_details
+    post_description = (
+        f"{post_frontmatter['description']}\n\n"
+        if post_frontmatter.get('description')
+        else ''
+    )
+
+    if post_frontmatter.get('image'):
+        image_path = post_frontmatter['image']
+        image_name = path.splitext(path.basename(image_path))[0]
+        post_banner_image = f"![{image_name}]({image_path})\n\n"
+    else:
+        post_banner_image = ''
+
+    return post_title, post_description, post_banner_image
+
+
+def prepare_payload(filepath: str, status: str) -> MediumPost:
+    """Generate Payload with required fields to Publish Post"""
+
+    payload: MediumPost = {"contentFormat": "markdown"}
+
+    markdown_file_content = read_markdown_file(filepath)
+
+    post_frontmatter = markdown_file_content.metadata
+    post_title, post_description, post_banner_image = process_markdown_metadata(
+        post_frontmatter, payload, filepath, status
+    )
+
+    post_content = f"{post_title}{post_description}{post_banner_image}{markdown_file_content.content}"
     payload['content'] = post_content
 
     print_colored("Processing Post Content...")
@@ -121,9 +124,7 @@ def prepare_payload(filepath: str, status: str, author_details: bool) -> MediumP
 
 
 def get_author_id(token: str) -> str | None:
-    '''
-    Fetch the Author Id using the provided Token
-    '''
+    """Fetch the Author Id using the provided Token"""
 
     headers = get_headers(token)
     url = "https://api.medium.com/v1/me"
@@ -136,9 +137,7 @@ def get_author_id(token: str) -> str | None:
 
 
 def extract_images(content: str) -> list[str]:
-    """
-    Find images in the source file
-    """
+    """Find images in the source file"""
 
     output = markdown.markdown(content)
     soup = BeautifulSoup(output, "html.parser")
@@ -152,12 +151,10 @@ def extract_images(content: str) -> list[str]:
 
 
 def publish_image(image_path: str, headers: Mapping[str, str]) -> str | None:
-    """
-    Publish image to Medium CDN using API
-    """
+    """Publish image to Medium CDN using API"""
 
     with open(image_path, "rb") as image:
-        filename = os.path.basename(image_path)
+        filename = path.basename(image_path)
         extension = image_path.split(".")[-1]
         files = {"image": (filename, image, f"image/{extension}")}
 
@@ -172,22 +169,20 @@ def publish_image(image_path: str, headers: Mapping[str, str]) -> str | None:
 
 
 def post_article(data: MediumPost, medium_token: str, filepath: str) -> str | None:
-    """
-    Posts an article to medium using the generated payload
-    """
+    """Posts an article to medium using the generated payload"""
 
     headers = get_headers(medium_token)
     images_path = extract_images(data["content"])
 
     print_colored(f"\nFound {len(images_path)} images to upload...")
-    file_absolute_path = os.path.dirname(os.path.realpath(filepath))
+    file_absolute_path = path.dirname(path.realpath(filepath))
 
     for image_path in images_path:
-        absolute_image_path = os.path.normpath(os.path.join(file_absolute_path, image_path))
+        absolute_image_path = path.normpath(path.join(file_absolute_path, image_path))
         new_url = publish_image(absolute_image_path, headers)
         if new_url is not None:
             data["content"] = data["content"].replace(image_path, new_url)
-        print_colored(f"Uploading Image: {os.path.basename(image_path)}")
+        print_colored(f"Uploading Image: {path.basename(image_path)}")
 
     author_id = get_author_id(medium_token)
     url = f"https://api.medium.com/v1/users/{author_id}/posts"
@@ -204,9 +199,7 @@ def post_article(data: MediumPost, medium_token: str, filepath: str) -> str | No
 
 
 def parse_user_inputs() -> argparse.Namespace:
-    '''
-    Function to read input parameters from user
-    '''
+    """Returns input parameters provided on command line by user"""
 
     parser = argparse.ArgumentParser(description="Automate Publishing Articles to Medium")
 
@@ -215,11 +208,6 @@ def parse_user_inputs() -> argparse.Namespace:
     input_type.add_argument(
         '-l', '--list',
         help="Path of file containing Absolute Paths of Markdown files to Upload",
-    )
-
-    parser.add_argument(
-        '-a', '--author', required=False, action='store_true', default=False,
-        help='Add author details/ social links to the end of each post'
     )
 
     parser.add_argument(
@@ -232,26 +220,22 @@ def parse_user_inputs() -> argparse.Namespace:
     return user_arguments
 
 
-def upload_to_medium(filepath: str, status: str, author_details: bool) -> None:
-    '''
-    Function to Encapsulate Medium Post flow
-    '''
+def upload_to_medium(filepath: str, status: str) -> None:
+    """Function to Encapsulate Medium Post flow"""
 
-    payload = prepare_payload(filepath, status, author_details)
+    payload = prepare_payload(filepath, status)
 
-    medium_token = os.environ['MEDIUM_AUTH_TOKEN']
+    medium_token = environ['MEDIUM_AUTH_TOKEN']
     medium_post_url = post_article(payload, medium_token, filepath)
     print_colored(medium_post_url, Fore.LIGHTGREEN_EX)
 
 
 def main() -> None:
-    '''
-    Main driver function
-    '''
+    """Main Driver Function"""
 
     load_dotenv(dotenv_path='config/token.config')
 
-    if 'MEDIUM_AUTH_TOKEN' not in os.environ:
+    if 'MEDIUM_AUTH_TOKEN' not in environ:
         print_colored('Medium Token not found...', Fore.LIGHTRED_EX)
         return
 
@@ -259,11 +243,11 @@ def main() -> None:
     # print(user_arguments)
 
     if user_arguments.post is not None:
-        upload_to_medium(user_arguments.post, user_arguments.status, user_arguments.author)
+        upload_to_medium(user_arguments.post, user_arguments.status)
     else:
         with open(user_arguments.list, encoding='utf-8') as list_file:
             for filepath in list_file:
-                upload_to_medium(filepath.rstrip('\n'), user_arguments.status, user_arguments.author)
+                upload_to_medium(filepath.rstrip('\n'), user_arguments.status)
 
 
 if __name__ == "__main__":

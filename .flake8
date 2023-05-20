@@ -3,4 +3,5 @@ exclude = "venv"
 max-line-length = 110
 max-complexity = 15
 extend-ignore =
+    E501
 per-file-ignores =
