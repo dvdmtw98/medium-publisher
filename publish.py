@@ -7,16 +7,16 @@ https://medium.com/@davide.gazze/publish-a-medium-post-using-python-fccbe61c04e
 """
 
 from __future__ import annotations
-from typing import Mapping, Optional, TypedDict
-from os import path, environ
+from typing import Mapping, Optional, TypedDict, Any
+import os
 import argparse
 
 from colorama import Fore, Style
-import requests
 import markdown
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore
 import frontmatter  # type: ignore
+import cloudscraper  # type: ignore
 
 
 class MediumPost(TypedDict, total=False):
@@ -44,14 +44,12 @@ def get_headers(token: str) -> Mapping[str, str]:
     """Generates header to be send with each request to Medium"""
 
     headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive",
         "Host": "api.medium.com",
         "Authorization": f"Bearer {token}",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Accept-Charset": "utf-8"
     }
 
     return headers
@@ -68,14 +66,14 @@ def read_markdown_file(filepath: str) -> frontmatter.Post:
 
 
 def process_markdown_metadata(
-    post_frontmatter: dict[str, any], payload: MediumPost, filepath: str, status: str
+    post_frontmatter: dict[str, Any], payload: MediumPost, filepath: str, status: str
 ) -> tuple[str, str, str]:
     """Returns processed Metadata from Markdown file"""
 
     if post_frontmatter.get('title'):
         payload['title'] = post_frontmatter['title']
     else:
-        payload['title'] = str(path.basename(filepath))
+        payload['title'] = str(os.path.basename(filepath))
 
     if post_frontmatter.get('tags'):
         payload['tags'] = [
@@ -95,7 +93,7 @@ def process_markdown_metadata(
 
     if post_frontmatter.get('image'):
         image_path = post_frontmatter['image']
-        image_name = path.splitext(path.basename(image_path))[0]
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
         post_banner_image = f"![{image_name}]({image_path})\n\n"
     else:
         post_banner_image = ''
@@ -123,13 +121,13 @@ def prepare_payload(filepath: str, status: str) -> MediumPost:
     return payload
 
 
-def get_author_id(token: str) -> str | None:
+def get_author_id(token: str, scrapper: cloudscraper.CloudScraper) -> str | None:
     """Fetch the Author Id using the provided Token"""
 
     headers = get_headers(token)
     url = "https://api.medium.com/v1/me"
 
-    response = requests.get(url, headers=headers, timeout=60)
+    response = scrapper.get(url, headers=headers, timeout=60)
 
     if response.status_code == 200:
         return response.json()['data']['id']
@@ -150,16 +148,18 @@ def extract_images(content: str) -> list[str]:
     return extracted_images_list
 
 
-def publish_image(image_path: str, headers: Mapping[str, str]) -> str | None:
+def publish_image(
+    image_path: str, headers: Mapping[str, str], scrapper: cloudscraper.CloudScraper
+) -> str | None:
     """Publish image to Medium CDN using API"""
 
     with open(image_path, "rb") as image:
-        filename = path.basename(image_path)
+        filename = os.path.basename(image_path)
         extension = image_path.split(".")[-1]
         files = {"image": (filename, image, f"image/{extension}")}
 
         url = "https://api.medium.com/v1/images"
-        response = requests.post(url, headers=headers, files=files, timeout=60)
+        response = scrapper.post(url, headers=headers, files=files, timeout=60)
 
         if response.status_code in [200, 201]:
             json = response.json()
@@ -171,23 +171,24 @@ def publish_image(image_path: str, headers: Mapping[str, str]) -> str | None:
 def post_article(data: MediumPost, medium_token: str, filepath: str) -> str | None:
     """Posts an article to medium using the generated payload"""
 
+    scrapper = cloudscraper.CloudScraper()
     headers = get_headers(medium_token)
     images_path = extract_images(data["content"])
 
     print_colored(f"\nFound {len(images_path)} images to upload...")
-    file_absolute_path = path.dirname(path.realpath(filepath))
+    file_absolute_path = os.path.dirname(os.path.realpath(filepath))
 
     for image_path in images_path:
-        absolute_image_path = path.normpath(path.join(file_absolute_path, image_path))
-        new_url = publish_image(absolute_image_path, headers)
+        absolute_image_path = os.path.normpath(os.path.join(file_absolute_path, image_path))
+        new_url = publish_image(absolute_image_path, headers, scrapper)
         if new_url is not None:
             data["content"] = data["content"].replace(image_path, new_url)
-        print_colored(f"Uploading Image: {path.basename(image_path)}")
+        print_colored(f"Uploading Image: {os.path.basename(image_path)}")
 
-    author_id = get_author_id(medium_token)
+    author_id = get_author_id(medium_token, scrapper)
     url = f"https://api.medium.com/v1/users/{author_id}/posts"
     print_colored(f"\nPosting Article to Medium as {data['publishStatus']}...")
-    response = requests.post(url, headers=headers, json=data, timeout=60)
+    response = scrapper.post(url, headers=headers, json=data, timeout=60)
 
     if response.status_code in [200, 201]:
         response_json = response.json()
@@ -225,7 +226,7 @@ def upload_to_medium(filepath: str, status: str) -> None:
 
     payload = prepare_payload(filepath, status)
 
-    medium_token = environ['MEDIUM_AUTH_TOKEN']
+    medium_token = os.environ['MEDIUM_AUTH_TOKEN']
     medium_post_url = post_article(payload, medium_token, filepath)
     print_colored(medium_post_url, Fore.LIGHTGREEN_EX)
 
@@ -233,9 +234,8 @@ def upload_to_medium(filepath: str, status: str) -> None:
 def main() -> None:
     """Main Driver Function"""
 
-    load_dotenv(dotenv_path='config/token.config')
-
-    if 'MEDIUM_AUTH_TOKEN' not in environ:
+    load_dotenv(dotenv_path=os.path.join('config', 'token.config'))
+    if 'MEDIUM_AUTH_TOKEN' not in os.environ:
         print_colored('Medium Token not found...', Fore.LIGHTRED_EX)
         return
 
