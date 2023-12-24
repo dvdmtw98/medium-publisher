@@ -2,7 +2,7 @@
 
 A python script to automate and simplify the process of publishing Markdown files as posts to Medium using the Medium REST API.  
 The script supports setting the Title, Subtitle and Tags of the Medium posts using Markdown Front matter.  
-The script can bypass the Cloudflare anti-bot protection.
+The script can bypass Cloudflare Anti-bot Protection.
 
 ```bash
 > python .\publish.py -h
