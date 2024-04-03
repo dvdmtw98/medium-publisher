@@ -130,6 +130,7 @@ def get_author_id(token: str, scrapper: cloudscraper.CloudScraper) -> str | None
     url = "https://api.medium.com/v1/me"
 
     response = scrapper.get(url, headers=headers, timeout=60)
+    print_colored(f"\nAuthor Id Fetch: {response.status_code}")
 
     if response.status_code == 200:
         return response.json()['data']['id']
@@ -162,6 +163,7 @@ def publish_image(
 
         url = "https://api.medium.com/v1/images"
         response = scrapper.post(url, headers=headers, files=files, timeout=60)
+        print_colored(f"Image: {filename} - Status Code: {response.status_code}")
 
         if response.status_code in [200, 201]:
             json = response.json()
@@ -185,19 +187,19 @@ def post_article(data: MediumPost, medium_token: str, filepath: str) -> str | No
         new_url = publish_image(absolute_image_path, headers, scrapper)
         if new_url is not None:
             data["content"] = data["content"].replace(image_path, new_url)
-        print_colored(f"Uploading Image: {os.path.basename(image_path)}")
 
     author_id = get_author_id(medium_token, scrapper)
+    print(author_id)
+
     url = f"https://api.medium.com/v1/users/{author_id}/posts"
-    print_colored(f"\nPosting Article to Medium as {data['publishStatus']}...")
     response = scrapper.post(url, headers=headers, json=data, timeout=60)
+    print_colored(f"\nPublish Post: {response.status_code}")
 
     if response.status_code in [200, 201]:
         response_json = response.json()
         medium_post_url = response_json["data"]["url"]
         return medium_post_url
 
-    print_colored("Error: Failed to Post Article...", Fore.LIGHTRED_EX)
     return None
 
 
@@ -230,7 +232,11 @@ def upload_to_medium(filepath: str, status: str) -> None:
 
     medium_token = os.environ['MEDIUM_AUTH_TOKEN']
     medium_post_url = post_article(payload, medium_token, filepath)
-    print_colored(medium_post_url, Fore.LIGHTGREEN_EX)
+    if medium_post_url is not None:
+        print_colored(medium_post_url, Fore.LIGHTGREEN_EX)
+        return
+
+    print_colored("Error: Failed to Post Article...", Fore.LIGHTRED_EX)
 
 
 def main() -> None:
