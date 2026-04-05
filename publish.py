@@ -58,7 +58,7 @@ def get_headers(token: str) -> Mapping[str, str]:
 
 
 def read_markdown_file(filepath: str) -> frontmatter.Post:
-    """Reads the content of markdown file"""
+    """Reads the content of Markdown file"""
 
     with open(filepath, 'r', encoding='utf-8') as markdown_file:
         markdown_file_content = frontmatter.load(markdown_file)
@@ -103,7 +103,17 @@ def process_markdown_metadata(
     return post_title, post_description, post_banner_image
 
 
-def prepare_payload(filepath: str, status: str) -> MediumPost:
+def read_socials_details() -> str:
+    """Read Author Social Links from File"""
+
+    with open('config/socials.md', 'r', encoding='utf-8') as socials:
+        file_content = socials.read()
+    print_colored("Reading Author Social Details...")
+
+    return file_content
+
+
+def prepare_payload(filepath: str, status: str, author_details: bool) -> MediumPost:
     """Generate Payload with required fields to Publish Post"""
 
     payload: MediumPost = {"contentFormat": "markdown"}
@@ -115,7 +125,9 @@ def prepare_payload(filepath: str, status: str) -> MediumPost:
         post_frontmatter, payload, filepath, status
     )
 
-    post_content = f"{post_title}{post_description}{post_banner_image}{markdown_file_content.content}"
+    socials_details = read_socials_details() if author_details else ''
+
+    post_content = f"{post_title}{post_description}{post_banner_image}{markdown_file_content.content}{socials_details}"
     payload['content'] = post_content
 
     print_colored("Processing Post Content...")
@@ -216,6 +228,11 @@ def parse_user_inputs() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '-a', '--author', required=False, action='store_true', default=False,
+        help='Add author details (social links) to the end of each post'
+    )
+
+    parser.add_argument(
         '-s', '--status', required=False, default='draft',
         help="Status of Post when Published to Medium",
         type=str, choices=["public", "unlisted", "draft"]
@@ -225,10 +242,10 @@ def parse_user_inputs() -> argparse.Namespace:
     return user_arguments
 
 
-def upload_to_medium(filepath: str, status: str) -> None:
+def upload_to_medium(filepath: str, status: str, author_details: bool) -> None:
     """Function to Encapsulate Medium Post flow"""
 
-    payload = prepare_payload(filepath, status)
+    payload = prepare_payload(filepath, status, author_details)
 
     medium_token = os.environ['MEDIUM_AUTH_TOKEN']
     medium_post_url = post_article(payload, medium_token, filepath)
@@ -251,11 +268,11 @@ def main() -> None:
     # print(user_arguments)
 
     if user_arguments.post is not None:
-        upload_to_medium(user_arguments.post, user_arguments.status)
+        upload_to_medium(user_arguments.post, user_arguments.status, user_arguments.author)
     else:
         with open(user_arguments.list, encoding='utf-8') as list_file:
             for filepath in list_file:
-                upload_to_medium(filepath.rstrip('\n'), user_arguments.status)
+                upload_to_medium(filepath.rstrip('\n'), user_arguments.status, user_arguments.author)
 
 
 if __name__ == "__main__":
